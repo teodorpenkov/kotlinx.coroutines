@@ -83,8 +83,11 @@ internal open class JobSupport constructor(active: Boolean) : Job, SelectClause0
     // Note: use shared objects while we have no listeners
     private val _state = atomic<Any?>(if (active) EMPTY_ACTIVE else EMPTY_NEW)
 
-    @Volatile
-    private var parentHandle: DisposableHandle? = null
+    private val _parentHandle = atomic<DisposableHandle?>(null)
+
+    private var parentHandle: DisposableHandle?
+        get() = _parentHandle.value
+        set(value) { _parentHandle.value = value }
 
     // ------------ initialization ------------
 
@@ -96,13 +99,13 @@ internal open class JobSupport constructor(active: Boolean) : Job, SelectClause0
     internal fun initParentJobInternal(parent: Job?) {
         check(parentHandle == null)
         if (parent == null) {
-            parentHandle = NonDisposableHandle
+            check(_parentHandle.getAndSet(NonDisposableHandle) == null)
             return
         }
         parent.start() // make sure the parent is started
         @Suppress("DEPRECATION")
         val handle = parent.attachChild(this)
-        parentHandle = handle
+        check(_parentHandle.getAndSet(handle) == null)
         // now check our state _after_ registering (see tryFinalizeStateActually order of actions)
         if (isCompleted) {
             handle.dispose()
